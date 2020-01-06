@@ -1,3 +1,145 @@
-請運用DHT22及RTC時鐘模組與SD卡模組，可將時間、溫度、濕度資料紀錄在SD卡檔案內。
-資料格式：日期，時分秒，溫度，濕度。
-完成期限：108年11月17日
+	  SD card read/write      //
+
+ This example shows how to read and write data to and from an SD card file
+ The circuit:
+ * SD card attached to SPI bus as follows:
+ ** MOSI - pin 11
+ ** MISO - pin 12
+ ** CLK - pin 13
+ ** CS - pin 4 (for MKRZero SD: SDCARD_SS_PIN)
+
+ created   Nov 2010
+ by David A. Mellis
+ modified 9 Apr 2012
+ by Tom Igoe
+
+ This example code is in the public domain.
+*/
+
+/*  Lab9 DHT22 程式碼*/
+/* DHT22 接線方式
+GND --> GND
+VCC --> 5V
+DAT --> pin2
+*/
+
+/* RTC時鐘接線方式
+GND --> GND
+VCC --> 5V
+CLK --> pin7
+DAT --> pin6
+RST --> pin5  
+*/
+
+#include <stdio.h>      //匯入DS1302函式庫
+#include <DS1302.h>
+
+#include <SPI.h>
+#include <SD.h>
+
+#include "DHT.h"        // 匯入DHT函式庫
+#define DHTPIN 2        // 定義DHT函式庫中，所使用的訊號來源
+#define DHTTYPE DHT22   // 定義DHT函式庫中，所使用的感測器
+DHT dht(DHTPIN, DHTTYPE);
+
+File myF;               //宣告物件 myFile
+int i=0;
+
+namespace {
+
+const int kCePin   = 5;  // Chip Enable
+const int kIoPin   = 6;  // Input/Output
+const int kSclkPin = 7;  // Serial Clock
+
+////Create a DS1302 object.
+DS1302 rtc(kCePin, kIoPin, kSclkPin);
+
+String dayAsString(const Time::Day day) {
+  switch (day) {
+    case Time::kSunday: return "Sunday";
+    case Time::kMonday: return "Monday";
+    case Time::kTuesday: return "Tuesday";
+    case Time::kWednesday: return "Wednesday";
+    case Time::kThursday: return "Thursday";
+    case Time::kFriday: return "Friday";
+    case Time::kSaturday: return "Saturday";
+  }
+  return "(unknown day)";
+}
+
+void printTime() {
+  // Get the current time and date from the chip.
+  Time t = rtc.time();          //此行為重要的時間變數宣告及設定，可嘗試複製移到其他位置
+
+  // Name the day of the week.
+  const String day = dayAsString(t.day);
+
+  // Format the time and date and insert into the temporary buffer.
+  char buf[50];
+  snprintf(buf, sizeof(buf), "%s %04d-%02d-%02d %02d:%02d:%02d",
+           day.c_str(),
+           t.yr, t.mon, t.date,
+           t.hr, t.min, t.sec);  //請留意此段t.hr等用法
+
+  // Print the formatted string to serial so we can see the time.
+  Serial.println(buf);
+}
+
+}  // namespace
+
+void setup() {
+  // Open serial communications and wait for port to open:
+  
+  Serial.begin(9600);
+  Serial.print("DHTxx test!");    /*設定序列埠監控視窗，並輸出文字*/
+  dht.begin();
+
+  rtc.writeProtect(false);
+  rtc.halt(false);
+  Time t(2020, 1, 5, 00, 00, 00, Time::kSunday); 
+  rtc.time(t); //此行為一開始設定用，設定好後可加//不用再執行   
+  
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+}
+
+void loop() {
+
+  
+  printTime();
+  
+  delay(5000);                        // 每次測量間隔
+
+  //每次讀取溫度或濕度大約會花 250 milliseconds
+  float dhtT = dht.readTemperature();    //設定浮點變數dhtT，讀取溫度
+  float dhtH = dht.readHumidity();       //設定浮點變數dhtH，讀取濕度
+
+  Serial.print("Temperature: ");        //序列埠監控視窗印出文字
+  Serial.print(dhtT);                   //序列埠監控視窗印出dhtT數值
+  Serial.print(" *C ");
+  Serial.print("Humidity: ");
+  Serial.print(dhtH);                 //序列埠監控視窗印出dhtH數值
+  Serial.println(" % ");
+  
+  if (!SD.begin(4)) {
+
+    while (1);
+  }
+  
+
+  // open the file. note that only one file can be open at a time,
+  // so you have to close this one before opening another.
+  myF = SD.open("clock.txt", FILE_WRITE);
+
+  // if the file opened okay, write to it:
+  if (myF) {
+
+    myF.print(dhtT);
+    myF.print(",");
+    myF.println("clock");
+    i++;
+    // close the file:
+    myF.flush();
+   
+  } else {
